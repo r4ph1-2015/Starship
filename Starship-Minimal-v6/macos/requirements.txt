@@ -1,0 +1,6 @@
+pyobjc-core
+pyobjc-framework-Cocoa
+pyobjc-framework-AVFoundation
+pyobjc-framework-Quartz
+requests
+py2app
