@@ -1,13 +1,31 @@
-# Starship Minimal v5
+# Starship — Native Swift macOS
 
-Minimal macOS animated wallpaper app.
+A native Swift/AppKit rebuild of Starship. No Python, PyObjC, FFmpeg, Homebrew, or runtime Swift compilation.
 
-Menu bar:
-- Open Starship
-- Quit Starship
+## Features
+- Menu bar `★`
+- Import MP4/MOV/M4V wallpaper
+- Full-screen animated desktop wallpaper on every display
+- Infinite looping
+- Starts at login using `SMAppService`
+- Apply to macOS Tahoe Lock Screen using the existing Apple Aerial store
+- Restore Apple Lock Screen
+- Native AVFoundation + VideoToolbox encoding
+- Visible Lock Screen progress
 
-Main window:
-- Open Wallpaper… — choose a local video
-- Quit Starship
+## Build
+Run on macOS Tahoe with Xcode Command Line Tools installed:
 
-The wallpaper loops forever and is shown on all connected screens.
+```bash
+cd Starship
+./Scripts/build.sh
+open build/Starship.app
+```
+
+The build creates `build/Starship.app` and `build/Starship.zip`.
+
+The Lock Screen feature expects macOS Tahoe to have at least one downloaded Apple Aerial. Starship never downloads Apple assets itself.
+
+## Build troubleshooting
+
+If the build reports `failed to produce diagnostic for expression` in `LockScreenManager.swift` around `candidates.max`, this version already avoids that Swift compiler diagnostic by selecting the largest Aerial file with an explicit loop.
