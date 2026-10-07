@@ -16,4 +16,4 @@ If you get a warning, Use these instructions
 
 6. ```codesign --verify --deep --strict --verbose=2 ~/Applications/Starship.app```
 
-7. ```open ~/Applications/Starship.app``
+7. ```open ~/Applications/Starship.app```
