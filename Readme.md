@@ -17,3 +17,5 @@ If you get a warning, Use these instructions
 6. ```codesign --verify --deep --strict --verbose=2 ~/Applications/Starship.app```
 
 7. ```open ~/Applications/Starship.app```
+
+After doing this, You will be able to open the app using the apps ui or command+space and search starship or if they dont work, You can go in finder and open your user/applications/starship
