@@ -30,6 +30,9 @@
   const encodePath = (path) => String(path).split("/").map(encodeURIComponent).join("/");
   const rawURL = (path) => RAW_BASE + encodePath(path);
   const blobURL = (path) => `https://github.com/${OWNER}/${REPO}/blob/${BRANCH}/${encodePath(path)}`;
+  // GitHub's /raw endpoint serves the repository file as a download; adding
+  // download=1 makes the intent explicit for supported clients.
+  const downloadURL = (path) => `https://github.com/${OWNER}/${REPO}/raw/refs/heads/${BRANCH}/${encodePath(path)}?download=1`;
   const escapeHTML = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
   const makeItem = (entry) => {
     const path = entry.path;
@@ -88,5 +91,5 @@
   document.addEventListener("DOMContentLoaded", () => {
     document.querySelectorAll("[data-year]").forEach((element) => { element.textContent = String(new Date().getFullYear()); });
   });
-  window.StarshipCatalog = { load, isVideo, humanizeTitle, formatBytes, escapeHTML, rawURL, blobURL };
+  window.StarshipCatalog = { load, isVideo, humanizeTitle, formatBytes, escapeHTML, rawURL, blobURL, downloadURL };
 })();

@@ -15,18 +15,12 @@
   let filter = "all";
   let visibleLimit = PAGE_SIZE;
   let activeItem = null;
-  let favorites = loadFavorites();
   let videoObserver = null;
 
-  function loadFavorites() {
-    try { const parsed = JSON.parse(localStorage.getItem("starship-gallery-favorites") || "[]"); return new Set(Array.isArray(parsed) ? parsed : []); }
-    catch (_) { return new Set(); }
-  }
-  function saveFavorites() { try { localStorage.setItem("starship-gallery-favorites", JSON.stringify([...favorites])); } catch (_) {} }
   function getFiltered() {
     const query = (searchInput?.value || "").trim().toLocaleLowerCase();
     let filtered = items.filter((item) => {
-      const matchesFilter = filter === "all" || item.kind === filter || (filter === "saved" && favorites.has(item.path));
+      const matchesFilter = filter === "all" || item.kind === filter;
       const matchesQuery = !query || `${item.title} ${item.name} ${item.path} ${item.extension}`.toLocaleLowerCase().includes(query);
       return matchesFilter && matchesQuery;
     });
@@ -38,23 +32,27 @@
     }
     return filtered;
   }
+
   function cardMarkup(item) {
-    const title = h(item.title), path = h(item.path), raw = h(item.rawURL), saved = favorites.has(item.path);
+    const title = h(item.title), path = h(item.path), raw = h(item.rawURL);
     const media = item.kind === "video"
       ? `<video class="card-media" src="${raw}" muted loop playsinline preload="metadata" aria-label="Video preview: ${title}"></video><span class="media-play-mark" aria-hidden="true">▶</span>`
       : `<img class="card-media" src="${raw}" alt="${title}" loading="lazy" decoding="async">`;
-    return `<article class="wallpaper-card" data-path="${path}"><button class="card-preview-button" type="button" data-open-wallpaper="${path}" aria-label="Preview ${title}"><div class="card-artwork ${item.kind === "video" ? "is-video" : "is-image"}">${media}<span class="card-type-badge">${item.kind === "video" ? "▶ VIDEO" : "▧ IMAGE"}</span><span class="card-preview-overlay"><span>Preview wallpaper <b aria-hidden="true">↗</b></span></span></div><div class="card-copy"><div class="card-title-row"><h2>${title}</h2><span class="card-filetype">${h(item.extension.toUpperCase())}</span></div><div class="card-subline"><span>${h(catalog.formatBytes(item.size))}</span><span class="card-meta-dot"></span><span>${item.kind === "video" ? "Motion" : "Still image"}</span></div></div></button><button class="favorite-button ${saved ? "is-saved" : ""}" type="button" data-favorite="${path}" aria-label="${saved ? "Remove from saved wallpapers" : "Save wallpaper"}: ${title}" aria-pressed="${saved}">${saved ? "★" : "☆"}</button></article>`;
+    return `<article class="wallpaper-card" data-path="${path}"><button class="card-preview-button" type="button" data-open-wallpaper="${path}" aria-label="Preview ${title}"><div class="card-artwork ${item.kind === "video" ? "is-video" : "is-image"}">${media}<span class="card-type-badge">${item.kind === "video" ? "▶ VIDEO" : "▧ IMAGE"}</span><span class="card-preview-overlay"><span>${item.kind === "video" ? "Play video preview" : "Preview wallpaper"} <b aria-hidden="true">↗</b></span></span></div><div class="card-copy"><div class="card-title-row"><h2>${title}</h2><span class="card-filetype">${h(item.extension.toUpperCase())}</span></div><div class="card-subline"><span>${h(catalog.formatBytes(item.size))}</span><span class="card-meta-dot"></span><span>${item.kind === "video" ? "Motion" : "Still image"}</span></div></div></button></article>`;
   }
+
   function updateStats() {
     document.getElementById("total-count").textContent = items.length;
     document.getElementById("video-count").textContent = items.filter((item) => item.kind === "video").length;
     document.getElementById("image-count").textContent = items.filter((item) => item.kind === "image").length;
     document.getElementById("all-filter-count").textContent = items.length;
   }
+
   function setupVideoObserver() {
     if (videoObserver) videoObserver.disconnect();
+    const videos = grid.querySelectorAll("video");
     if (!("IntersectionObserver" in window)) {
-      grid.querySelectorAll("video").forEach((video) => { video.play().catch(() => {}); });
+      videos.forEach((video) => video.play().catch(() => {}));
       return;
     }
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -67,8 +65,12 @@
         } else video.pause();
       });
     }, { rootMargin: "160px 0px" });
-    grid.querySelectorAll("video").forEach((video) => videoObserver.observe(video));
+    videos.forEach((video) => {
+      video.addEventListener("error", () => video.closest(".card-artwork")?.classList.add("video-unavailable"), { once: true });
+      videoObserver.observe(video);
+    });
   }
+
   function render() {
     const filtered = getFiltered();
     const shown = filtered.slice(0, visibleLimit);
@@ -78,12 +80,15 @@
     emptyState.hidden = filtered.length !== 0;
     loadMoreButton.hidden = shown.length >= filtered.length;
     setupVideoObserver();
-    if (window.location.hash.startsWith("#wallpaper=")) {
-      const path = decodeURIComponent(window.location.hash.slice("#wallpaper=".length));
-      const item = items.find((candidate) => candidate.path === path);
-      if (item && !dialog.open) openDialog(item, false);
+    if (window.location.hash.startsWith("#wallpaper=") && !dialog.open) {
+      try {
+        const path = decodeURIComponent(window.location.hash.slice("#wallpaper=".length));
+        const item = items.find((candidate) => candidate.path === path);
+        if (item) openDialog(item, false);
+      } catch (_) { /* Ignore malformed deep links. */ }
     }
   }
+
   function setFilter(next) {
     filter = next;
     visibleLimit = PAGE_SIZE;
@@ -94,35 +99,53 @@
     });
     render();
   }
-  function toggleFavorite(path) {
-    if (favorites.has(path)) favorites.delete(path); else favorites.add(path);
-    saveFavorites();
-    render();
-    if (dialog.open && activeItem?.path === path) updateDialogFavorite();
-  }
+
   function renderModalMedia(item) {
     const host = document.getElementById("dialog-media");
-    if (item.kind === "video") host.innerHTML = `<video class="dialog-video" src="${h(item.rawURL)}" controls autoplay muted loop playsinline></video>`;
-    else host.innerHTML = `<img class="dialog-image" src="${h(item.rawURL)}" alt="${h(item.title)}">`;
-    const visual = host.querySelector("img,video");
     const metadata = document.getElementById("dialog-metadata");
+    const feedback = document.getElementById("dialog-feedback");
+    feedback.textContent = "";
+    host.replaceChildren();
+    let visual;
+    if (item.kind === "video") {
+      visual = document.createElement("video");
+      visual.className = "dialog-video";
+      visual.src = item.rawURL;
+      visual.controls = true;
+      visual.autoplay = true;
+      visual.muted = true;
+      visual.defaultMuted = true;
+      visual.loop = true;
+      visual.playsInline = true;
+      visual.preload = "auto";
+      visual.setAttribute("aria-label", `${item.title} video wallpaper preview`);
+      visual.addEventListener("error", () => {
+        feedback.textContent = "This video format may not be supported by your browser. Use Download wallpaper to save the original file.";
+      });
+      visual.addEventListener("canplay", () => { feedback.textContent = "Playing preview · muted · looping"; });
+    } else {
+      visual = document.createElement("img");
+      visual.className = "dialog-image";
+      visual.src = item.rawURL;
+      visual.alt = item.title;
+      visual.addEventListener("error", () => { feedback.textContent = "The preview could not load. Try downloading the original file."; }, { once: true });
+    }
+    host.appendChild(visual);
+
     const updateDetails = () => {
       const parts = [item.kind === "video" ? "Video wallpaper" : "Image wallpaper", catalog.formatBytes(item.size)];
-      if (visual && visual.videoWidth && visual.videoHeight) parts.push(`${visual.videoWidth} × ${visual.videoHeight}`);
-      else if (visual && visual.naturalWidth && visual.naturalHeight) parts.push(`${visual.naturalWidth} × ${visual.naturalHeight}`);
-      if (item.kind === "video" && visual?.duration && Number.isFinite(visual.duration)) parts.push(`${Math.floor(visual.duration / 60)}:${String(Math.floor(visual.duration % 60)).padStart(2, "0")}`);
+      if (visual.videoWidth && visual.videoHeight) parts.push(`${visual.videoWidth} × ${visual.videoHeight}`);
+      else if (visual.naturalWidth && visual.naturalHeight) parts.push(`${visual.naturalWidth} × ${visual.naturalHeight}`);
+      if (item.kind === "video" && visual.duration && Number.isFinite(visual.duration)) {
+        parts.push(`${Math.floor(visual.duration / 60)}:${String(Math.floor(visual.duration % 60)).padStart(2, "0")}`);
+      }
       metadata.innerHTML = parts.map((part) => `<span>${h(part)}</span>`).join("");
     };
-    visual?.addEventListener(item.kind === "video" ? "loadedmetadata" : "load", updateDetails, { once: true });
+    visual.addEventListener(item.kind === "video" ? "loadedmetadata" : "load", updateDetails, { once: true });
     updateDetails();
+    return visual;
   }
-  function updateDialogFavorite() {
-    const button = document.getElementById("dialog-save");
-    if (!activeItem) return;
-    const saved = favorites.has(activeItem.path);
-    button.textContent = saved ? "★ Saved" : "☆ Save wallpaper";
-    button.classList.toggle("is-saved", saved);
-  }
+
   function openDialog(item, updateHash = true) {
     activeItem = item;
     document.getElementById("dialog-title").textContent = item.title;
@@ -130,22 +153,39 @@
     document.getElementById("dialog-eyebrow").textContent = `${item.kind === "video" ? "VIDEO WALLPAPER" : "IMAGE WALLPAPER"} · ${item.extension.toUpperCase()}`;
     document.getElementById("dialog-open-original").href = item.rawURL;
     document.getElementById("dialog-github").href = item.blobURL;
-    document.getElementById("dialog-feedback").textContent = "";
-    renderModalMedia(item);
-    updateDialogFavorite();
+    const download = document.getElementById("dialog-download");
+    download.href = catalog.downloadURL(item.path);
+    download.download = item.name;
+    download.setAttribute("aria-label", `Download wallpaper ${item.title}`);
+
     if (!dialog.open) dialog.showModal();
+    const visual = renderModalMedia(item);
+    if (item.kind === "video") {
+      // Start playback after the dialog is visible. Calling play() only while
+      // the video is inside a closed dialog is unreliable in several browsers.
+      requestAnimationFrame(() => {
+        if (!dialog.open || activeItem?.path !== item.path) return;
+        visual.play().then(() => {
+          document.getElementById("dialog-feedback").textContent = "Playing preview · muted · looping";
+        }).catch(() => {
+          document.getElementById("dialog-feedback").textContent = "Press ▶ in the video controls to play. If this format is unsupported, download the original file.";
+        });
+      });
+    }
     if (updateHash) history.replaceState(null, "", `#wallpaper=${encodeURIComponent(item.path)}`);
   }
-  function closeDialog() { if (dialog.open) dialog.close(); }
+
+  function closeDialog() {
+    const video = document.querySelector("#dialog-media video");
+    if (video) { video.pause(); video.removeAttribute("src"); video.load(); }
+    if (dialog.open) dialog.close();
+  }
 
   grid.addEventListener("click", (event) => {
-    const favorite = event.target.closest("[data-favorite]");
-    if (favorite) { event.preventDefault(); event.stopPropagation(); toggleFavorite(favorite.dataset.favorite); return; }
     const preview = event.target.closest("[data-open-wallpaper]");
-    if (preview) {
-      const item = items.find((candidate) => candidate.path === preview.dataset.openWallpaper);
-      if (item) openDialog(item);
-    }
+    if (!preview) return;
+    const item = items.find((candidate) => candidate.path === preview.dataset.openWallpaper);
+    if (item) openDialog(item);
   });
   document.querySelectorAll(".filter-pill").forEach((button) => button.addEventListener("click", () => setFilter(button.dataset.filter)));
   searchInput.addEventListener("input", () => { visibleLimit = PAGE_SIZE; render(); });
@@ -155,9 +195,13 @@
   document.getElementById("retry-gallery").addEventListener("click", async () => { errorState.hidden = true; grid.hidden = false; grid.innerHTML = '<div class="gallery-skeleton"></div><div class="gallery-skeleton"></div><div class="gallery-skeleton"></div>'; await init(true); });
   document.querySelector(".dialog-close").addEventListener("click", closeDialog);
   dialog.addEventListener("click", (event) => { if (event.target === dialog) closeDialog(); });
-  dialog.addEventListener("close", () => { activeItem = null; history.replaceState(null, "", window.location.pathname + window.location.search); });
-  document.getElementById("dialog-save").addEventListener("click", () => { if (activeItem) toggleFavorite(activeItem.path); });
-  document.getElementById("dialog-github").addEventListener("click", () => {});
+  dialog.addEventListener("close", () => {
+    const video = document.querySelector("#dialog-media video");
+    if (video) { video.pause(); video.removeAttribute("src"); video.load(); }
+    document.getElementById("dialog-media").replaceChildren();
+    activeItem = null;
+    history.replaceState(null, "", window.location.pathname + window.location.search);
+  });
   searchInput.addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchInput.focus(); } });
   document.addEventListener("keydown", (event) => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") { event.preventDefault(); searchInput.focus(); } });
 
@@ -165,15 +209,13 @@
     errorState.hidden = true;
     grid.hidden = false;
     try {
-      if (retry) items = await catalog.load(); else items = await catalog.load();
+      items = await catalog.load();
       updateStats();
-      render();
       const params = new URLSearchParams(window.location.search);
       if (params.has("q")) searchInput.value = params.get("q");
-      if (params.has("q")) render();
-      const note = document.getElementById("results-summary");
-      if (!items.length) note.textContent = "No supported image or video files were found in /gallery.";
-    } catch (error) {
+      render();
+      if (!items.length) summary.textContent = "No supported image or video files were found in /gallery.";
+    } catch (_) {
       grid.hidden = true;
       errorState.hidden = false;
       summary.textContent = "Gallery unavailable";
