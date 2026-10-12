@@ -4,20 +4,53 @@ import QuartzCore
 
 final class WallpaperEngine: NSObject {
     private var windows: [NSWindow] = []
-    private var players: [AVPlayer] = []
     private var layers: [AVPlayerLayer] = []
-    private var observers: [NSObjectProtocol] = []
+    private var player: AVQueuePlayer?
+    private var playerLooper: AVPlayerLooper?
+    private let imageExtensions = Set(["jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif"])
+    private(set) var volume: Float = UserDefaults.standard.object(forKey: "wallpaperVolume") as? Float ?? 0.5
+    private(set) var isMuted = UserDefaults.standard.object(forKey: "wallpaperMuted") as? Bool ?? false
 
-    func stop() {
-        observers.forEach { NotificationCenter.default.removeObserver($0) }
-        observers.removeAll()
-        players.forEach { $0.pause() }
-        windows.forEach { $0.orderOut(nil) }
-        players.removeAll(); layers.removeAll(); windows.removeAll()
+    func setVolume(_ value: Float) {
+        volume = min(1, max(0, value))
+        UserDefaults.standard.set(volume, forKey: "wallpaperVolume")
+        if volume > 0 && isMuted { setMuted(false) }
+        player?.volume = volume
     }
 
-    func play(_ url: URL) {
+    func setMuted(_ muted: Bool) {
+        isMuted = muted
+        UserDefaults.standard.set(muted, forKey: "wallpaperMuted")
+        player?.isMuted = muted
+    }
+
+    func toggleMute() { setMuted(!isMuted) }
+
+    func stop() {
+        player?.pause()
+        playerLooper = nil
+        windows.forEach { $0.orderOut(nil) }
+        player = nil
+        layers.removeAll()
+        windows.removeAll()
+    }
+
+    func play(_ url: URL) throws {
         stop()
+        if imageExtensions.contains(url.pathExtension.lowercased()) {
+            for screen in NSScreen.screens {
+                try NSWorkspace.shared.setDesktopImageURL(url, for: screen, options: [:])
+            }
+            return
+        }
+        let item = AVPlayerItem(url: url)
+        item.preferredForwardBufferDuration = 3
+        let player = AVQueuePlayer()
+        player.volume = volume
+        player.isMuted = isMuted
+        player.preventsDisplaySleepDuringVideoPlayback = false
+        playerLooper = AVPlayerLooper(player: player, templateItem: item)
+        self.player = player
         let level = CGWindowLevelForKey(.desktopWindow)
         for screen in NSScreen.screens {
             let window = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -26,17 +59,13 @@ final class WallpaperEngine: NSObject {
             window.isOpaque = true; window.backgroundColor = .black; window.ignoresMouseEvents = true
             let view = NSView(frame: window.contentRect(forFrameRect: screen.frame)); view.wantsLayer = true
             window.contentView = view
-            let player = AVPlayer(url: url)
             let layer = AVPlayerLayer(player: player)
             layer.frame = view.bounds; layer.videoGravity = .resizeAspectFill
             view.layer?.addSublayer(layer)
-            let token = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: player.currentItem, queue: .main) { [weak self, weak player] _ in
-                player?.seek(to: .zero) { _ in player?.play() }
-                _ = self
-            }
-            observers.append(token)
-            window.orderFrontRegardless(); player.play()
-            windows.append(window); players.append(player); layers.append(layer)
+            window.orderFrontRegardless()
+            windows.append(window)
+            layers.append(layer)
         }
+        player.play()
     }
 }
