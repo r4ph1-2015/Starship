@@ -8,7 +8,7 @@ If you get a warning, Use these instructions
 
 2. ```mkdir -p ~/Applications```
 
-3. ```cp -R "/Volumes/Starship/Starship.app" ~/Applications/```
+3. ```cp -R "/Volumes/Starship Snowflake 2026.1/Starship.app" ~/Applications/```
 
 4. ```xattr -dr com.apple.quarantine ~/Applications/Starship.app```
 
